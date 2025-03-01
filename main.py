@@ -275,56 +275,10 @@ async def process_node(node_id, hardware_id, proxy, ip_address, auth_token):
         is_connected = await check_node(node_id, proxy, auth_token)
         print(f"[{datetime.now().isoformat()}] Sending initial ping for nodeId: {node_id}")
         await ping_node(node_id, proxy, ip_address, is_connected, auth_token)
-
-        async def ping_loop():
-            while True:
-                try:
-                    print(f"[{datetime.now().isoformat()}] Sending ping for nodeId: {node_id}")
-                    is_connected = await check_node(node_id, proxy, auth_token)
-                    await ping_node(node_id, proxy, ip_address, is_connected, auth_token)
-                    if datetime.now() >= DATE_EXPIRE:
-                        print(f"[{datetime.now().isoformat()}] End date. Stopping interval.")
-                        sys.exit()
-                except Exception as error:
-                    print(f"[{datetime.now().isoformat()}] Error during ping for nodeId: {node_id}: {error}")
-                await asyncio.sleep(20 * 60)  # 20 minutes
-
-        async def health_check_loop():
-            while True:
-                try:
-                    print(f"[{datetime.now().isoformat()}] Sending Health Check for nodeId: {node_id}")
-                    await health_check(node_id, proxy, auth_token)
-
-                    print(f"[{datetime.now().isoformat()}] Checking connection status for nodeId: {node_id}")
-                    is_connected = await check_node(node_id, proxy, auth_token)
-
-                    if not is_connected:
-                        print(f"[{datetime.now().isoformat()}] Node nodeId: {node_id} is not connected.")
-                        try:
-                            await stop_session(node_id, proxy, auth_token)
-                            print(f"[{datetime.now().isoformat()}] Restarting session for nodeId: {node_id}")
-                            await register_node(node_id, hardware_id, ip_address, proxy, auth_token)
-                            await start_session(node_id, proxy, auth_token)
-                        except Exception as error:
-                            print(f"[{datetime.now().isoformat()}] Error Restarting session for nodeId: {node_id}. Error: {error}")
-                    if datetime.now() >= DATE_EXPIRE:
-                        print(f"[{datetime.now().isoformat()}] End date. Stopping interval.")
-                        sys.exit()
-                except Exception as error:
-                    print(f"[{datetime.now().isoformat()}] Error during Health Check for nodeId: {node_id}: {error}")
-                await asyncio.sleep(10 * 60)  # 10 minutes
-
-        await asyncio.gather(ping_loop(), health_check_loop())
-
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] Error occurred for nodeId: {node_id}, restarting process: {error}")
 
 async def run_all(initial_run=True):
-    print("TOOL DEVELOPED BY: 'THIEN THO TRAN'");
-    print(
-      "Join facebook group to get new tools: https://www.facebook.com/groups/2072702003172443/"
-    );
-    print("------------------------------------------------------------");
     try:
         if initial_run:
             use_proxy = 'y'
@@ -338,20 +292,23 @@ async def run_all(initial_run=True):
 
         stt_account = 0
         current_account = ''
-        for i in range(len(auth_tokens)):
-            if current_account != auth_tokens[i]:
-                current_account = auth_tokens[i]
-                stt_account += 1
-            print(f"[{datetime.now().isoformat()}]: Start with account {stt_account}")
-            print(f"[{datetime.now().isoformat()}]: Start with stt id {i}")
-            node_id = ids[i]["nodeId"]
-            hardware_id = ids[i]["hardwareId"]
-            proxy = proxies[i] if use_proxy else None
-            ip_address = await fetch_ip_address(proxy) if use_proxy else None
-            print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
-            auth_token = auth_tokens[i]
-            await process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token)
-            await process_node(node_id, hardware_id, proxy, ip_address, auth_token)
+        while True:
+            for i in range(len(auth_tokens)):
+                if current_account != auth_tokens[i]:
+                    current_account = auth_tokens[i]
+                    stt_account += 1
+                print(f"[{datetime.now().isoformat()}]: Start with account {stt_account}")
+                print(f"[{datetime.now().isoformat()}]: Start with stt id {i + 1}")
+                node_id = ids[i]["nodeId"]
+                hardware_id = ids[i]["hardwareId"]
+                proxy = proxies[i] if use_proxy else None
+                ip_address = await fetch_ip_address(proxy) if use_proxy else None
+                print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
+                auth_token = auth_tokens[i]
+                await process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token)
+                await process_node(node_id, hardware_id, proxy, ip_address, auth_token)
+            await asyncio.sleep(15 * 60)
+            
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
 
