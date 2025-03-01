@@ -1,5 +1,8 @@
 # Blockless Bless Network Bot 
 
+## JOIN GROUP FACEBOOK TO GET MORE TOOLS
+[GROUP FACEBOOK]([https://bless.network/dashboard?ref=G8Y9MO](https://www.facebook.com/groups/2072702003172443)).
+
 ## Description
 This script automates network or node operations for Blockless Bless Network.
 
