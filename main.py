@@ -320,6 +320,11 @@ async def process_node(node_id, hardware_id, proxy, ip_address, auth_token):
         print(f"[{datetime.now().isoformat()}] Error occurred for nodeId: {node_id}, restarting process: {error}")
 
 async def run_all(initial_run=True):
+    print("TOOL DEVELOPED BY: 'THIEN THO TRAN'");
+    print(
+      "Join facebook group to get new tools: https://www.facebook.com/groups/2072702003172443/"
+    );
+    print("------------------------------------------------------------");
     try:
         if initial_run:
             use_proxy = 'y'
