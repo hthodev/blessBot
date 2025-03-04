@@ -1,14 +1,12 @@
 import cloudscraper
-import sys
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 from colorama import Fore, Style
 import asyncio
 
 # Constants
 API_BASE_URL = "https://gateway-run.bls.dev/api/v1"
 IP_SERVICE_URL = "https://icanhazip.com/"
-DATE_EXPIRE = datetime(2029, 3, 27)
 use_proxy = None
 
 # Helper functions
@@ -91,8 +89,7 @@ async def read_auth_token():
     return auth_tokens
 
 # Cloudscraper functions
-async def fetch_ip_address(proxy=None):
-    scraper = cloudscraper.create_scraper()
+async def fetch_ip_address(proxy=None, scraper=any):
     headers = {
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"
@@ -106,8 +103,7 @@ async def fetch_ip_address(proxy=None):
         print(f"[{datetime.now().isoformat()}] Error fetching IP address: {error}")
         return "0.0.0.0"
 
-async def register_node(node_id, hardware_id, ip_address, proxy, auth_token):
-    scraper = cloudscraper.create_scraper()
+async def register_node(node_id, hardware_id, ip_address, proxy, auth_token, scraper):
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {auth_token}",
@@ -135,8 +131,7 @@ async def register_node(node_id, hardware_id, ip_address, proxy, auth_token):
         print(f"[{datetime.now().isoformat()}] Error registering node: {error}")
         raise error
 
-async def start_session(node_id, proxy, auth_token):
-    scraper = cloudscraper.create_scraper()
+async def start_session(node_id, proxy, auth_token, scraper):
     headers = {
         "Accept": "*/*",
         "Authorization": f"Bearer {auth_token}",
@@ -157,30 +152,8 @@ async def start_session(node_id, proxy, auth_token):
         print(f"[{datetime.now().isoformat()}] Error starting session: {error}")
         raise error
 
-async def stop_session(node_id, proxy, auth_token):
-    scraper = cloudscraper.create_scraper()
-    headers = {
-        "Accept": "*/*",
-        "Authorization": f"Bearer {auth_token}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
-        "origin": "chrome-extension://pljbjcehnhcnofmkdbjolghdcjnmekia",
-        "x-extension-version": "0.1.7"
-    }
-    proxies = {"http": proxy, "https": proxy} if proxy else None
 
-    stop_session_url = f"{API_BASE_URL}/nodes/{node_id}/stop-session"
-    print(f"[{datetime.now().isoformat()}] Stopping session for node {node_id}, it might take a while...")
-
-    try:
-        response = scraper.post(stop_session_url, headers=headers, proxies=proxies)
-        print(f"[{datetime.now().isoformat()}] Stop session response: {response.json()}")
-        return response.json()
-    except Exception as error:
-        print(f"[{datetime.now().isoformat()}] Error stopping session: {error}")
-        raise error
-
-async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token):
-    scraper = cloudscraper.create_scraper()
+async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token, scraper):
     headers = {
         "Accept": "*/*",
         "Authorization": f"Bearer {auth_token}",
@@ -205,8 +178,7 @@ async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token):
         print(f"[{datetime.now().isoformat()}] Error pinging node: {error}")
         raise error
 
-async def check_node(node_id, proxy, auth_token):
-    scraper = cloudscraper.create_scraper()
+async def check_node(node_id, proxy, auth_token, scraper):
     headers = {
         "Authorization": f"Bearer {auth_token}",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
@@ -230,51 +202,28 @@ async def check_node(node_id, proxy, auth_token):
         print(f"[{datetime.now().isoformat()}] Error checking node: {error}")
         raise error
 
-async def health_check(node_id, proxy, auth_token):
-    scraper = cloudscraper.create_scraper()
-    headers = {
-        "Authorization": f"Bearer {auth_token}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
-        "origin": "chrome-extension://pljbjcehnhcnofmkdbjolghdcjnmekia",
-        "x-extension-version": "0.1.7"
-    }
-    proxies = {"http": proxy, "https": proxy} if proxy else None
-
-    check_url = f"{API_BASE_URL}/health"
-    print(f"[{datetime.now().isoformat()}] Checking Health node {node_id} using proxy {proxy}")
-
-    try:
-        response = scraper.get(check_url, headers=headers, proxies=proxies)
-        data = response.json()
-        log_message = f"[{datetime.now().isoformat()}] Health Check response, NodeID: {Fore.GREEN}{node_id}{Style.RESET_ALL}, Status: {Fore.YELLOW}{data.get('status')}{Style.RESET_ALL}, Proxy: {proxy}"
-        print(log_message)
-        return data
-    except Exception as error:
-        print(f"[{datetime.now().isoformat()}] Error checking health: {error}")
-        raise error
-
 # Main logic
-async def process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token):
+async def process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper):
     try:
         print(f"[{datetime.now().isoformat()}] Processing nodeId: {node_id}, hardwareId: {hardware_id}, IP: {ip_address}")
-        is_connected = await check_node(node_id, proxy, auth_token)
+        is_connected = await check_node(node_id, proxy, auth_token, scraper)
         print(f"[{datetime.now().isoformat()}] Node nodeId: {node_id} is connected? {is_connected}.")
         if not is_connected:
             try:
                 print(f"[{datetime.now().isoformat()}] Starting session for nodeId: {node_id}")
-                await register_node(node_id, hardware_id, ip_address, proxy, auth_token)
-                await start_session(node_id, proxy, auth_token)
+                await register_node(node_id, hardware_id, ip_address, proxy, auth_token, scraper)
+                await start_session(node_id, proxy, auth_token, scraper)
             except Exception as error:
                 print(f"[{datetime.now().isoformat()}] Error Starting session for nodeId: {node_id}. Error: {error}")
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
 
-async def process_node(node_id, hardware_id, proxy, ip_address, auth_token):
+async def process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper):
     try:
         print(f"[{datetime.now().isoformat()}] Processing nodeId: {node_id}, hardwareId: {hardware_id}, IP: {ip_address}")
-        is_connected = await check_node(node_id, proxy, auth_token)
+        is_connected = await check_node(node_id, proxy, auth_token, scraper)
         print(f"[{datetime.now().isoformat()}] Sending initial ping for nodeId: {node_id}")
-        await ping_node(node_id, proxy, ip_address, is_connected, auth_token)
+        await ping_node(node_id, proxy, ip_address, is_connected, auth_token, scraper)
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] Error occurred for nodeId: {node_id}, restarting process: {error}")
 
@@ -292,26 +241,29 @@ async def run_all(initial_run=True):
 
         stt_account = 0
         current_account = ''
+        scraper = cloudscraper.create_scraper()
         while True:
             for i in range(len(auth_tokens)):
-                if current_account != auth_tokens[i]:
-                    current_account = auth_tokens[i]
-                    stt_account += 1
-                print(f"[{datetime.now().isoformat()}]: Start with account {stt_account}")
-                print(f"[{datetime.now().isoformat()}]: Start with stt id {i + 1}")
-                node_id = ids[i]["nodeId"]
-                hardware_id = ids[i]["hardwareId"]
-                proxy = proxies[i] if use_proxy else None
-                ip_address = await fetch_ip_address(proxy) if use_proxy else None
-                print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
-                auth_token = auth_tokens[i]
-                await process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token)
-                await process_node(node_id, hardware_id, proxy, ip_address, auth_token)
-            await asyncio.sleep(15 * 60)
+                try:
+                    if current_account != auth_tokens[i]:
+                        current_account = auth_tokens[i]
+                        stt_account += 1
+                    print(f"[{datetime.now().isoformat()}]: Start with account {stt_account}")
+                    print(f"[{datetime.now().isoformat()}]: Start with stt id {i + 1}")
+                    node_id = ids[i]["nodeId"]
+                    hardware_id = ids[i]["hardwareId"]
+                    proxy = proxies[i] if use_proxy else None
+                    ip_address = await fetch_ip_address(proxy, scraper) if use_proxy else None
+                    print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
+                    auth_token = auth_tokens[i]
+                    await process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper)
+                    await process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper)
+                except Exception as error:
+                    print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
+            await asyncio.sleep(5* 60)
             
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
-
 # Run the script
 if __name__ == "__main__":
     asyncio.run(run_all())
