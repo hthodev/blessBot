@@ -1,12 +1,16 @@
 import cloudscraper
+import sys
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from colorama import Fore, Style
 import asyncio
+import time
+from datetime import datetime
 
 # Constants
 API_BASE_URL = "https://gateway-run.bls.dev/api/v1"
 IP_SERVICE_URL = "https://icanhazip.com/"
+DATE_EXPIRE = datetime(2035, 3, 17)
 use_proxy = None
 
 # Helper functions
@@ -69,7 +73,7 @@ def generate_random_hardware_info():
         "cpuFeatures": random_cpu_features,
         "numOfProcessors": get_random_element(num_processors),
         "totalMemory": get_random_element(memory_sizes),
-        "extensionVersions": "0.1.7"
+        "extensionVersions": "0.1.8"
     }
 
 # File reading functions
@@ -81,7 +85,7 @@ async def read_proxies():
 async def read_node_and_hardware_ids():
     with open("id.txt", "r") as file:
         ids = [line.strip() for line in file if line.strip()]
-    return [{"nodeId": id.split(":")[0], "hardwareId": id.split(":")[1]} for id in ids]
+    return [{"nodeId": id.split(":")[0], "hardwareId": id.split(":")[1], "sign_extension": id.split(":")[2]} for id in ids]
 
 async def read_auth_token():
     with open("user.txt", "r") as file:
@@ -89,27 +93,36 @@ async def read_auth_token():
     return auth_tokens
 
 # Cloudscraper functions
-async def fetch_ip_address(proxy=None, scraper=any):
+async def fetch_ip_address(proxy=None, scraper=any, retries=3, delay=3):
     headers = {
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"
     }
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
-    try:
-        response = scraper.get(IP_SERVICE_URL, headers=headers, proxies=proxies)
-        return response.text.strip() or "0.0.0.0"
-    except Exception as error:
-        print(f"[{datetime.now().isoformat()}] Error fetching IP address: {error}")
-        return "0.0.0.0"
+    for attempt in range(1, retries + 1):
+        try:
+            start_time = time.time() 
+            response = scraper.get(IP_SERVICE_URL, headers=headers, proxies=proxies)
+            duration = time.time() - start_time
 
+            print(f"[{datetime.now().isoformat()}] Proxy {proxy} responded in {duration:.2f} seconds")
+            return response.text.strip()
+        except Exception as error:
+            print(f"[{datetime.now().isoformat()}] Attempt {attempt}/{retries} - Error fetching IP address: {error}")
+
+            if attempt < retries:
+                print(f"Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+
+    return None
 async def register_node(node_id, hardware_id, ip_address, proxy, auth_token, scraper):
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {auth_token}",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
         "origin": "chrome-extension://pljbjcehnhcnofmkdbjolghdcjnmekia",
-        "x-extension-version": "0.1.7"
+        "x-extension-version": "0.1.8"
     }
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
@@ -120,7 +133,7 @@ async def register_node(node_id, hardware_id, ip_address, proxy, auth_token, scr
         "ipAddress": ip_address,
         "hardwareId": hardware_id,
         "hardwareInfo": generate_random_hardware_info(),
-        "extensionVersion": "0.1.7"
+        "extensionVersion": "0.1.8"
     }
 
     try:
@@ -137,7 +150,7 @@ async def start_session(node_id, proxy, auth_token, scraper):
         "Authorization": f"Bearer {auth_token}",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
         "origin": "chrome-extension://pljbjcehnhcnofmkdbjolghdcjnmekia",
-        "x-extension-version": "0.1.7"
+        "x-extension-version": "0.1.8"
     }
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
@@ -153,13 +166,15 @@ async def start_session(node_id, proxy, auth_token, scraper):
         raise error
 
 
-async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token, scraper):
+async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token, scraper, sign_extension):
     headers = {
         "Accept": "*/*",
         "Authorization": f"Bearer {auth_token}",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
         "origin": "chrome-extension://pljbjcehnhcnofmkdbjolghdcjnmekia",
-        "x-extension-version": "0.1.7"
+        "x-extension-version": "0.1.8",
+        "Content-Type": "application/json",
+        "X-Extension-Signature": sign_extension
     }
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
@@ -171,7 +186,7 @@ async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token, sc
     try:
         response = scraper.post(ping_url, headers=headers, json=payload, proxies=proxies)
         data = response.json()
-        log_message = f"[{datetime.now().isoformat()}] Ping response, NodeID: {Fore.GREEN}{node_id}{Style.RESET_ALL}, Status: {Fore.YELLOW}{data.get('status')}{Style.RESET_ALL}, Proxy: {proxy}, IP: {ip_address}"
+        log_message = f"[{datetime.now().isoformat()}] Ping response, NodeID: {Fore.GREEN}{node_id}{Style.RESET_ALL}, Status: {Fore.YELLOW}{response.text}{Style.RESET_ALL}, Proxy: {proxy}, IP: {ip_address}"
         print(log_message)
         return data
     except Exception as error:
@@ -183,7 +198,7 @@ async def check_node(node_id, proxy, auth_token, scraper):
         "Authorization": f"Bearer {auth_token}",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
         "origin": "chrome-extension://pljbjcehnhcnofmkdbjolghdcjnmekia",
-        "x-extension-version": "0.1.7"
+        "x-extension-version": "0.1.8"
     }
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
@@ -218,12 +233,12 @@ async def process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token, 
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
 
-async def process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper):
+async def process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper, sign_extension):
     try:
         print(f"[{datetime.now().isoformat()}] Processing nodeId: {node_id}, hardwareId: {hardware_id}, IP: {ip_address}")
         is_connected = await check_node(node_id, proxy, auth_token, scraper)
         print(f"[{datetime.now().isoformat()}] Sending initial ping for nodeId: {node_id}")
-        await ping_node(node_id, proxy, ip_address, is_connected, auth_token, scraper)
+        await ping_node(node_id, proxy, ip_address, is_connected, auth_token, scraper, sign_extension)
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] Error occurred for nodeId: {node_id}, restarting process: {error}")
 
@@ -239,10 +254,12 @@ async def run_all(initial_run=True):
         if use_proxy and len(proxies) < len(ids):
             raise Exception(f"Number of proxies ({len(proxies)}) does not match number of nodeId:hardwareId pairs ({len(ids)})")
 
-        stt_account = 0
         current_account = ''
         scraper = cloudscraper.create_scraper()
         while True:
+            start_time = time.time()
+            stt_account = 0
+
             for i in range(len(auth_tokens)):
                 try:
                     if current_account != auth_tokens[i]:
@@ -250,17 +267,27 @@ async def run_all(initial_run=True):
                         stt_account += 1
                     print(f"[{datetime.now().isoformat()}]: Start with account {stt_account}")
                     print(f"[{datetime.now().isoformat()}]: Start with stt id {i + 1}")
+                    
                     node_id = ids[i]["nodeId"]
                     hardware_id = ids[i]["hardwareId"]
+                    sign_extension = ids[i]["sign_extension"]
                     proxy = proxies[i] if use_proxy else None
                     ip_address = await fetch_ip_address(proxy, scraper) if use_proxy else None
                     print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
+
                     auth_token = auth_tokens[i]
                     await process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper)
-                    await process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper)
+                    await process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper, sign_extension)
+                
                 except Exception as error:
                     print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
-            await asyncio.sleep(5* 60)
+
+            # Tính thời gian đã chạy
+            elapsed_time = time.time() - start_time  
+            remaining_time = (10 * 60) - elapsed_time 
+
+            if remaining_time > 0:  
+                await asyncio.sleep(remaining_time)
             
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
