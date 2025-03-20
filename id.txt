@@ -1,1 +1,1 @@
-nodeId:hardwareId
+nodeId:hardwareId:sign_extension
