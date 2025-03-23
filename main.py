@@ -6,6 +6,7 @@ from colorama import Fore, Style
 import asyncio
 import time
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 # Constants
 API_BASE_URL = "https://gateway-run.bls.dev/api/v1"
@@ -93,7 +94,7 @@ async def read_auth_token():
     return auth_tokens
 
 # Cloudscraper functions
-async def fetch_ip_address(proxy=None, scraper=any, retries=3, delay=3):
+def fetch_ip_address_sync(proxy=None, scraper=None, retries=3, delay=3):
     headers = {
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"
@@ -102,7 +103,7 @@ async def fetch_ip_address(proxy=None, scraper=any, retries=3, delay=3):
 
     for attempt in range(1, retries + 1):
         try:
-            start_time = time.time() 
+            start_time = time.time()
             response = scraper.get(IP_SERVICE_URL, headers=headers, proxies=proxies)
             duration = time.time() - start_time
 
@@ -113,10 +114,20 @@ async def fetch_ip_address(proxy=None, scraper=any, retries=3, delay=3):
 
             if attempt < retries:
                 print(f"Retrying in {delay} seconds...")
-                await asyncio.sleep(delay)
+                time.sleep(delay)
 
     return None
-async def register_node(node_id, hardware_id, ip_address, proxy, auth_token, scraper):
+
+async def fetch_ip_address(proxy=None, scraper=None, retries=3, delay=3):
+    with ThreadPoolExecutor() as executor:
+        try:
+            future = executor.submit(fetch_ip_address_sync, proxy, scraper, retries, delay)
+            return await asyncio.wait_for(asyncio.wrap_future(future), timeout=10)
+        except TimeoutError:
+            print(f"[{datetime.now().isoformat()}] Timeout fetching IP address")
+            return None
+
+def register_node_sync(node_id, hardware_id, ip_address, proxy, auth_token, scraper):
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {auth_token}",
@@ -144,7 +155,16 @@ async def register_node(node_id, hardware_id, ip_address, proxy, auth_token, scr
         print(f"[{datetime.now().isoformat()}] Error registering node: {error}")
         raise error
 
-async def start_session(node_id, proxy, auth_token, scraper):
+async def register_node(node_id, hardware_id, ip_address, proxy, auth_token, scraper):
+    with ThreadPoolExecutor() as executor:
+        try:
+            future = executor.submit(register_node_sync, node_id, hardware_id, ip_address, proxy, auth_token, scraper)
+            return await asyncio.wait_for(asyncio.wrap_future(future), timeout=10)
+        except TimeoutError:
+            print(f"[{datetime.now().isoformat()}] Timeout registering node")
+            return None
+
+def start_session_sync(node_id, proxy, auth_token, scraper):
     headers = {
         "Accept": "*/*",
         "Authorization": f"Bearer {auth_token}",
@@ -165,8 +185,16 @@ async def start_session(node_id, proxy, auth_token, scraper):
         print(f"[{datetime.now().isoformat()}] Error starting session: {error}")
         raise error
 
+async def start_session(node_id, proxy, auth_token, scraper):
+    with ThreadPoolExecutor() as executor:
+        try:
+            future = executor.submit(start_session_sync, node_id, proxy, auth_token, scraper)
+            return await asyncio.wait_for(asyncio.wrap_future(future), timeout=10)
+        except TimeoutError:
+            print(f"[{datetime.now().isoformat()}] Timeout starting session")
+            return None
 
-async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token, scraper, sign_extension):
+def ping_node_sync(node_id, proxy, ip_address, is_b7s_connected, auth_token, scraper, sign_extension):
     headers = {
         "Accept": "*/*",
         "Authorization": f"Bearer {auth_token}",
@@ -193,7 +221,16 @@ async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token, sc
         print(f"[{datetime.now().isoformat()}] Error pinging node: {error}")
         raise error
 
-async def check_node(node_id, proxy, auth_token, scraper):
+async def ping_node(node_id, proxy, ip_address, is_b7s_connected, auth_token, scraper, sign_extension):
+    with ThreadPoolExecutor() as executor:
+        try:
+            future = executor.submit(ping_node_sync, node_id, proxy, ip_address, is_b7s_connected, auth_token, scraper, sign_extension)
+            return await asyncio.wait_for(asyncio.wrap_future(future), timeout=10)
+        except TimeoutError:
+            print(f"[{datetime.now().isoformat()}] Timeout pinging node")
+            return None
+
+def check_node_sync(node_id, proxy, auth_token, scraper):
     headers = {
         "Authorization": f"Bearer {auth_token}",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
@@ -216,6 +253,15 @@ async def check_node(node_id, proxy, auth_token, scraper):
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] Error checking node: {error}")
         raise error
+
+async def check_node(node_id, proxy, auth_token, scraper):
+    with ThreadPoolExecutor() as executor:
+        try:
+            future = executor.submit(check_node_sync, node_id, proxy, auth_token, scraper)
+            return await asyncio.wait_for(asyncio.wrap_future(future), timeout=10)
+        except TimeoutError:
+            print(f"[{datetime.now().isoformat()}] Timeout checking node")
+            return False
 
 # Main logic
 async def process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper):
@@ -244,18 +290,17 @@ async def process_node(node_id, hardware_id, proxy, ip_address, auth_token, scra
 
 async def run_all(initial_run=True):
     try:
-        if initial_run:
-            use_proxy = 'y'
-
         ids = await read_node_and_hardware_ids()
         proxies = await read_proxies()
         auth_tokens = await read_auth_token()
 
-        if use_proxy and len(proxies) < len(ids):
+        if len(proxies) < len(ids):
             raise Exception(f"Number of proxies ({len(proxies)}) does not match number of nodeId:hardwareId pairs ({len(ids)})")
 
         current_account = ''
         scraper = cloudscraper.create_scraper()
+        ip_addresses = [None] * len(auth_tokens)
+
         while True:
             start_time = time.time()
             stt_account = 0
@@ -271,8 +316,13 @@ async def run_all(initial_run=True):
                     node_id = ids[i]["nodeId"]
                     hardware_id = ids[i]["hardwareId"]
                     sign_extension = ids[i]["sign_extension"]
-                    proxy = proxies[i] if use_proxy else None
-                    ip_address = await fetch_ip_address(proxy, scraper) if use_proxy else None
+                    proxy = proxies[i]
+                    ip_address = None
+                    if not ip_addresses[i]:
+                        ip_address = await fetch_ip_address(proxy, scraper)
+                        ip_addresses[i] = ip_address
+                    else:
+                        ip_address = ip_addresses[i]
                     print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
 
                     auth_token = auth_tokens[i]
@@ -284,13 +334,14 @@ async def run_all(initial_run=True):
 
             # Tính thời gian đã chạy
             elapsed_time = time.time() - start_time  
-            remaining_time = (10 * 60) - elapsed_time 
+            remaining_time = (15 * 60) - elapsed_time 
 
             if remaining_time > 0:  
                 await asyncio.sleep(remaining_time)
             
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
+
 # Run the script
 if __name__ == "__main__":
     asyncio.run(run_all())
