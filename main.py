@@ -11,8 +11,6 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 # Constants
 API_BASE_URL = "https://gateway-run.bls.dev/api/v1"
 IP_SERVICE_URL = "https://icanhazip.com/"
-DATE_EXPIRE = datetime(2035, 3, 17)
-use_proxy = None
 
 # Helper functions
 def get_random_element(arr):
@@ -288,6 +286,31 @@ async def process_node(node_id, hardware_id, proxy, ip_address, auth_token, scra
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] Error occurred for nodeId: {node_id}, restarting process: {error}")
 
+async def handle_account(i, ids, proxies, auth_tokens, ip_addresses, scraper):
+    try:
+        print(f"[{datetime.now().isoformat()}]: Start with stt id {i + 1}")
+
+        node_id = ids[i]["nodeId"]
+        hardware_id = ids[i]["hardwareId"]
+        sign_extension = ids[i]["sign_extension"]
+        proxy = proxies[i]
+
+        if not ip_addresses[i]:
+            ip_address = await fetch_ip_address(proxy, scraper)
+            ip_addresses[i] = ip_address
+        else:
+            ip_address = ip_addresses[i]
+
+        print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
+
+        auth_token = auth_tokens[i]
+        await process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper)
+        await process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper, sign_extension)
+
+    except Exception as error:
+        print(f"[{datetime.now().isoformat()}] An error occurred in task {i + 1}: {error}")
+
+
 async def run_all(initial_run=True):
     try:
         ids = await read_node_and_hardware_ids()
@@ -297,48 +320,27 @@ async def run_all(initial_run=True):
         if len(proxies) < len(ids):
             raise Exception(f"Number of proxies ({len(proxies)}) does not match number of nodeId:hardwareId pairs ({len(ids)})")
 
-        current_account = ''
         scraper = cloudscraper.create_scraper()
         ip_addresses = [None] * len(auth_tokens)
 
         while True:
             start_time = time.time()
-            stt_account = 0
+            print(f"[{datetime.now().isoformat()}]: Starting tasks for all accounts...")
 
+            tasks = []
             for i in range(len(auth_tokens)):
-                try:
-                    if current_account != auth_tokens[i]:
-                        current_account = auth_tokens[i]
-                        stt_account += 1
-                    print(f"[{datetime.now().isoformat()}]: Start with account {stt_account}")
-                    print(f"[{datetime.now().isoformat()}]: Start with stt id {i + 1}")
-                    
-                    node_id = ids[i]["nodeId"]
-                    hardware_id = ids[i]["hardwareId"]
-                    sign_extension = ids[i]["sign_extension"]
-                    proxy = proxies[i]
-                    ip_address = None
-                    if not ip_addresses[i]:
-                        ip_address = await fetch_ip_address(proxy, scraper)
-                        ip_addresses[i] = ip_address
-                    else:
-                        ip_address = ip_addresses[i]
-                    print(f"[{datetime.now().isoformat()}]: Start with ipAddress {ip_address}")
+                tasks.append(handle_account(i, ids, proxies, auth_tokens, ip_addresses, scraper))
 
-                    auth_token = auth_tokens[i]
-                    await process_reg_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper)
-                    await process_node(node_id, hardware_id, proxy, ip_address, auth_token, scraper, sign_extension)
-                
-                except Exception as error:
-                    print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
+            await asyncio.gather(*tasks)
 
             # Tính thời gian đã chạy
-            elapsed_time = time.time() - start_time  
-            remaining_time = (15 * 60) - elapsed_time 
+            elapsed_time = time.time() - start_time
+            remaining_time = (15 * 60) - elapsed_time
 
-            if remaining_time > 0:  
+            if remaining_time > 0:
+                print(f"[{datetime.now().isoformat()}]: Sleeping for {int(remaining_time)} seconds...")
                 await asyncio.sleep(remaining_time)
-            
+
     except Exception as error:
         print(f"[{datetime.now().isoformat()}] An error occurred: {error}")
 
